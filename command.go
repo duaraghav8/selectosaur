@@ -2,11 +2,12 @@ package main
 
 import (
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
 	"io"
+	"math"
 	"os"
+	"time"
 )
 
 var command = &cobra.Command{
@@ -30,11 +31,13 @@ func init() {
 }
 
 func commandHandler(cmd *cobra.Command, args []string) error {
+	// TODO: create a thread-safe datastore object to create sql queries & interact with timescaledb
+
 	wc, _ := cmd.Flags().GetInt("worker-count")
-	if wc < 1 {
-		return errors.New("worker count cannot be less than 1")
+	wp, err := newWorkerPool(wc)
+	if err != nil {
+		return fmt.Errorf("failed to create worker pool: %v", err)
 	}
-	// TODO: wc upper limit?
 
 	qpFile, _ := cmd.Flags().GetString("qp")
 	f, err := os.Open(qpFile)
@@ -43,8 +46,15 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 	}
 	defer f.Close()
 
+	var (
+		elapsed time.Duration
+		minQ    time.Duration = math.MaxInt
+		maxQ    time.Duration = -1
+	)
+	var queryCount int
+
 	reader := csv.NewReader(f)
-	// TODO: ensure that we skip first row (which contains field names)
+	reader.Read() // Skip the first row that contains field names
 	for {
 		rec, err := reader.Read()
 		if err == io.EOF {
@@ -55,25 +65,35 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to read CSV record: %v", err)
 		}
 
+		queryCount++
 		qp, err := newQueryParam(rec)
 		if err != nil {
 			return fmt.Errorf("failed to parse query param CSV record %v: %v", rec, err)
 		}
-
-		fmt.Println(qp)
+		wp.Submit(qp)
 	}
 
-	// create a thread-safe datastore object to create sql queries & interact with timescaledb
-	// create worker pool based on count
-	// load query params 1-by-1 (stream)
-	//
-	// for each qp:
-	//   get host's id from hostname & determine its worker (using modulo)
-	//   submit the qp to target worker (async, non-blocking)
-	//
-	// collect all worker responses
-	// calculate total no. of queries, total time across all queries
-	// calculate query times: min, med, avg, max
+	for i := 0; i < queryCount; i++ {
+		res := <-wp.Results
+		elapsed += res.ElapsedTime
+
+		if res.ElapsedTime > maxQ {
+			maxQ = res.ElapsedTime
+		}
+		if res.ElapsedTime < minQ {
+			minQ = res.ElapsedTime
+		}
+	}
+
+	fmt.Printf("Total number of queries run:   %d\n", queryCount)
+	fmt.Printf("Total time across all queries: %f seconds\n", elapsed.Seconds())
+
+	avg := elapsed.Seconds() / float64(queryCount)
+	fmt.Printf("Average query time:            %f seconds\n", avg)
+
+	fmt.Printf("Minimum query time:            %d milliseconds\n", minQ.Milliseconds())
+	fmt.Printf("Maximum query time:            %d milliseconds\n", maxQ.Milliseconds())
+	// TODO: median query time
 
 	return nil
 }

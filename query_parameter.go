@@ -5,6 +5,10 @@ type QueryParameter struct {
 	StartTime, EndTime string
 }
 
+func (q *QueryParameter) HostID() int {
+	return 0
+}
+
 // newQueryParam takes a string slice of 3 items:
 // [hostname, start_time, end_time]
 // It validates the data and returns a query param object in case of no errors.
