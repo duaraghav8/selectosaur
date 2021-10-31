@@ -2,12 +2,12 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"github.com/montanaflynn/stats"
 	"github.com/spf13/cobra"
 	"io"
-	"math"
 	"os"
-	"time"
 )
 
 var command = &cobra.Command{
@@ -30,6 +30,45 @@ func init() {
 	command.Flags().Int("worker-count", 1, "Number of workers")
 }
 
+// report generates and prints the final stats for query latencies & failures
+func report(latencies []float64, failures []error) error {
+	fmt.Printf("Total number of queries run:   %d\n", len(latencies))
+
+	fmt.Printf("Number of failures:            %d", len(failures))
+
+	elapsed, err := stats.Sum(latencies)
+	if err != nil {
+		return fmt.Errorf("failed to calculate total query time: %v", err)
+	}
+	fmt.Printf("Total time across all queries: %f milliseconds\n", elapsed)
+
+	avg, err := stats.Mean(latencies)
+	if err != nil {
+		return fmt.Errorf("failed to calculate average query time: %v", err)
+	}
+	fmt.Printf("Average query time:            %f seconds\n", avg)
+
+	min, err := stats.Min(latencies)
+	if err != nil {
+		return fmt.Errorf("failed to determine minimum query time: %v", err)
+	}
+	fmt.Printf("Minimum query time:            %f milliseconds\n", min)
+
+	max, err := stats.Max(latencies)
+	if err != nil {
+		return fmt.Errorf("failed to determine maximum query time: %v", err)
+	}
+	fmt.Printf("Maximum query time:            %f milliseconds\n", max)
+
+	med, err := stats.Median(latencies)
+	if err != nil {
+		return fmt.Errorf("failed to median query time: %v", err)
+	}
+	fmt.Printf("Median query time:             %f milliseconds\n", med)
+
+	return nil
+}
+
 func commandHandler(cmd *cobra.Command, args []string) error {
 	// TODO: create a thread-safe datastore object to create sql queries & interact with timescaledb
 
@@ -46,11 +85,6 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 	}
 	defer f.Close()
 
-	var (
-		elapsed time.Duration
-		minQ    time.Duration = math.MaxInt
-		maxQ    time.Duration = -1
-	)
 	var queryCount int
 
 	reader := csv.NewReader(f)
@@ -73,27 +107,22 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 		wp.Submit(qp)
 	}
 
-	for i := 0; i < queryCount; i++ {
-		res := <-wp.Results
-		elapsed += res.ElapsedTime
-
-		if res.ElapsedTime > maxQ {
-			maxQ = res.ElapsedTime
-		}
-		if res.ElapsedTime < minQ {
-			minQ = res.ElapsedTime
-		}
+	if queryCount == 0 {
+		return errors.New("there are no queries to run")
 	}
 
-	fmt.Printf("Total number of queries run:   %d\n", queryCount)
-	fmt.Printf("Total time across all queries: %f seconds\n", elapsed.Seconds())
+	latencies := make([]float64, 0, queryCount) // query latencies in ms
+	failures := make([]error, 0, queryCount)    // query latencies in ms
 
-	avg := elapsed.Seconds() / float64(queryCount)
-	fmt.Printf("Average query time:            %f seconds\n", avg)
+	for i := 0; i < queryCount; i++ {
+		res := <-wp.ResultsCh()
+		if res.Err != nil {
+			// optionally print the failure message, leaving that out for now
+			failures = append(failures, res.Err)
+			continue
+		}
+		latencies = append(latencies, float64(res.ElapsedTime.Milliseconds()))
+	}
 
-	fmt.Printf("Minimum query time:            %d milliseconds\n", minQ.Milliseconds())
-	fmt.Printf("Maximum query time:            %d milliseconds\n", maxQ.Milliseconds())
-	// TODO: median query time
-
-	return nil
+	return report(latencies, failures)
 }

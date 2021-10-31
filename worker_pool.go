@@ -11,12 +11,14 @@ type Worker struct {
 }
 
 type Result struct {
+	Job         *QueryParameter
 	ElapsedTime time.Duration
+	Err         error
 }
 
 type WorkerPool struct {
-	Results chan *Result
-	workers []*Worker
+	resultsCh chan *Result
+	workers   []*Worker
 }
 
 func (w *Worker) Start() {
@@ -24,6 +26,10 @@ func (w *Worker) Start() {
 		fmt.Println("got job", qp)
 		time.Sleep(time.Millisecond * 500)
 	}
+}
+
+func (wp *WorkerPool) ResultsCh() <-chan *Result {
+	return wp.resultsCh
 }
 
 func (wp *WorkerPool) Submit(qp *QueryParameter) {
@@ -46,8 +52,8 @@ func newWorkerPool(count int) (*WorkerPool, error) {
 	}
 
 	p := &WorkerPool{
-		workers: workers,
-		Results: make(chan *Result, count),
+		workers:   workers,
+		resultsCh: make(chan *Result, count),
 	}
 	return p, nil
 }
