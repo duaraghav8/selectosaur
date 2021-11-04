@@ -6,6 +6,7 @@ type QueryParameter struct {
 }
 
 func (q *QueryParameter) HostID() int {
+	// TODO
 	return 0
 }
 
@@ -13,7 +14,7 @@ func (q *QueryParameter) HostID() int {
 // [hostname, start_time, end_time]
 // It validates the data and returns a query param object in case of no errors.
 func newQueryParam(rec []string) (*QueryParameter, error) {
-	// validate all values
+	// TODO: validate all values
 	return &QueryParameter{
 		Hostname:  rec[0],
 		StartTime: rec[1],

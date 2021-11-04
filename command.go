@@ -4,10 +4,12 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/montanaflynn/stats"
 	"github.com/spf13/cobra"
 	"io"
 	"os"
+	"strings"
 )
 
 var command = &cobra.Command{
@@ -15,7 +17,8 @@ var command = &cobra.Command{
 	Short:   "Analyze TimescaleDB query performance",
 	RunE:    commandHandler,
 	Example: "selectosaur --qp /tmp/query_params.csv --worker-count 4",
-	Long:    ``,
+	Long: `    The DB_CONNECTION_STRING environment variable must be supplied. For example:
+    postgres://user:password@host:31703/dbname?sslmode=require`,
 }
 
 func init() {
@@ -70,14 +73,26 @@ func report(latencies []float64, failures []error) error {
 }
 
 func commandHandler(cmd *cobra.Command, args []string) error {
-	// TODO: create a thread-safe datastore object to create sql queries & interact with timescaledb
+	// create a connection pool to Timescale DB
+	connStr := os.Getenv("DB_CONNECTION_STRING")
+	if strings.TrimSpace(connStr) == "" {
+		return errors.New("DB_CONNECTION_STRING environment variable not supplied")
+	}
 
+	dbPool, err := pgxpool.Connect(cmd.Context(), connStr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to timescale database: %v", err)
+	}
+	defer dbPool.Close()
+
+	// create worker pool to execute jobs
 	wc, _ := cmd.Flags().GetInt("worker-count")
-	wp, err := newWorkerPool(wc)
+	wp, err := newWorkerPool(wc, &Datastore{dbPool})
 	if err != nil {
 		return fmt.Errorf("failed to create worker pool: %v", err)
 	}
 
+	// read & submit query parameters to the worker pool
 	qpFile, _ := cmd.Flags().GetString("qp")
 	f, err := os.Open(qpFile)
 	if err != nil {
@@ -111,8 +126,9 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 		return errors.New("there are no queries to run")
 	}
 
+	// prepare final stats report
 	latencies := make([]float64, 0, queryCount) // query latencies in ms
-	failures := make([]error, 0, queryCount)    // query latencies in ms
+	failures := make([]error, 0, queryCount)
 
 	for i := 0; i < queryCount; i++ {
 		res := <-wp.ResultsCh()
