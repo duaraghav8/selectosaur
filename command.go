@@ -50,7 +50,7 @@ func report(latencies []float64, failures []error) error {
 	if err != nil {
 		return fmt.Errorf("failed to calculate total query time: %v", err)
 	}
-	fmt.Printf("    Total time across all queries:    %f seconds\n", elapsed/1000)
+	fmt.Printf("    Total time across all queries:    %f ms\n", elapsed)
 
 	avg, err := stats.Mean(latencies)
 	if err != nil {
@@ -113,7 +113,7 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 	resultsQ := make(chan *Result, len(records))
 	wc, _ := cmd.Flags().GetInt("worker-count")
 
-	pool, err := newWorkerPool(wc, &Datastore{dbPool}, jobsQ, resultsQ)
+	pool, err := newWorkerPool(cmd.Context(), wc, &Datastore{dbPool}, jobsQ, resultsQ)
 	if err != nil {
 		return fmt.Errorf("failed to create worker pool: %v", err)
 	}
@@ -140,7 +140,7 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 			failures = append(failures, res.Err)
 			continue
 		}
-		latencies = append(latencies, float64(res.ElapsedTime.Milliseconds()))
+		latencies = append(latencies, res.ExecTimeMs)
 	}
 
 	return report(latencies, failures)
