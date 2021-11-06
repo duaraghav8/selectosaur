@@ -7,7 +7,6 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/montanaflynn/stats"
 	"github.com/spf13/cobra"
-	"io"
 	"os"
 	"strings"
 )
@@ -17,7 +16,10 @@ var command = &cobra.Command{
 	Short:   "Analyze TimescaleDB query performance",
 	RunE:    commandHandler,
 	Example: "selectosaur --qp /tmp/query_params.csv --worker-count 4",
-	Long: `    The DB_CONNECTION_STRING environment variable must be supplied. For example:
+	Long: `    Selectosaur runs SQL queries on Timescale DB based on
+    user-supplied parameters and outputs stats for them.
+
+    The DB_CONNECTION_STRING environment variable must be set. For example:
     postgres://user:password@host:31703/dbname?sslmode=require`,
 }
 
@@ -35,39 +37,43 @@ func init() {
 
 // report generates and prints the final stats for query latencies & failures
 func report(latencies []float64, failures []error) error {
-	fmt.Printf("Total number of queries run:   %d\n", len(latencies))
+	fmt.Printf("Total number of queries run:      %d\n", len(latencies)+len(failures))
 
-	fmt.Printf("Number of failures:            %d", len(failures))
+	fmt.Printf("Number of failures:               %d\n", len(failures))
+
+	if len(latencies) == 0 {
+		return errors.New("all queries failed, no stats to calculate")
+	}
 
 	elapsed, err := stats.Sum(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to calculate total query time: %v", err)
 	}
-	fmt.Printf("Total time across all queries: %f milliseconds\n", elapsed)
+	fmt.Printf("Total time across all queries:    %f milliseconds\n", elapsed)
 
 	avg, err := stats.Mean(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to calculate average query time: %v", err)
 	}
-	fmt.Printf("Average query time:            %f seconds\n", avg)
+	fmt.Printf("Average query time:               %f milliseconds\n", avg)
 
 	min, err := stats.Min(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to determine minimum query time: %v", err)
 	}
-	fmt.Printf("Minimum query time:            %f milliseconds\n", min)
+	fmt.Printf("Minimum query time:               %f milliseconds\n", min)
 
 	max, err := stats.Max(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to determine maximum query time: %v", err)
 	}
-	fmt.Printf("Maximum query time:            %f milliseconds\n", max)
+	fmt.Printf("Maximum query time:               %f milliseconds\n", max)
 
 	med, err := stats.Median(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to median query time: %v", err)
 	}
-	fmt.Printf("Median query time:             %f milliseconds\n", med)
+	fmt.Printf("Median query time:                %f milliseconds\n", med)
 
 	return nil
 }
@@ -85,14 +91,7 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 	}
 	defer dbPool.Close()
 
-	// create worker pool to execute jobs
-	wc, _ := cmd.Flags().GetInt("worker-count")
-	wp, err := newWorkerPool(wc, &Datastore{dbPool})
-	if err != nil {
-		return fmt.Errorf("failed to create worker pool: %v", err)
-	}
-
-	// read & submit query parameters to the worker pool
+	// read in CSV records
 	qpFile, _ := cmd.Flags().GetString("qp")
 	f, err := os.Open(qpFile)
 	if err != nil {
@@ -100,38 +99,41 @@ func commandHandler(cmd *cobra.Command, args []string) error {
 	}
 	defer f.Close()
 
-	var queryCount int
-
 	reader := csv.NewReader(f)
-	reader.Read() // Skip the first row that contains field names
-	for {
-		rec, err := reader.Read()
-		if err == io.EOF {
-			// no more query parameters left
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("failed to read CSV record: %v", err)
-		}
+	reader.Read() // Skip the first row because it contains headers
 
-		queryCount++
+	records, err := reader.ReadAll()
+	if len(records) == 0 {
+		return errors.New("there are no queries to run")
+	}
+
+	// create worker pool to execute jobs
+	jobsQ := make(chan *QueryParameter, len(records))
+	resultsQ := make(chan *Result, len(records))
+	wc, _ := cmd.Flags().GetInt("worker-count")
+
+	pool, err := newWorkerPool(wc, &Datastore{dbPool}, jobsQ, resultsQ)
+	if err != nil {
+		return fmt.Errorf("failed to create worker pool: %v", err)
+	}
+	defer pool.Close()
+
+	// submit query parameters as jobs to the pool
+	for _, rec := range records {
 		qp, err := newQueryParam(rec)
 		if err != nil {
 			return fmt.Errorf("failed to parse query param CSV record %v: %v", rec, err)
 		}
-		wp.Submit(qp)
+		jobsQ <- qp
 	}
-
-	if queryCount == 0 {
-		return errors.New("there are no queries to run")
-	}
+	close(jobsQ)
 
 	// prepare final stats report
-	latencies := make([]float64, 0, queryCount) // query latencies in ms
-	failures := make([]error, 0, queryCount)
+	latencies := make([]float64, 0, len(records)) // query latencies in ms
+	failures := make([]error, 0, len(records))
 
-	for i := 0; i < queryCount; i++ {
-		res := <-wp.ResultsCh()
+	for i := 0; i < len(records); i++ {
+		res := <-resultsQ
 		if res.Err != nil {
 			// optionally print the failure message, leaving that out for now
 			failures = append(failures, res.Err)
