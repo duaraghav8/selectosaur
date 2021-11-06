@@ -16,7 +16,8 @@ var command = &cobra.Command{
 	Short:   "Analyze TimescaleDB query performance",
 	RunE:    commandHandler,
 	Example: "selectosaur --qp /tmp/query_params.csv --worker-count 4",
-	Long: `    Selectosaur runs SQL queries on Timescale DB based on
+	Long: `
+    Selectosaur runs SQL queries on Timescale DB based on
     user-supplied parameters and outputs stats for them.
 
     The DB_CONNECTION_STRING environment variable must be set. For example:
@@ -37,9 +38,9 @@ func init() {
 
 // report generates and prints the final stats for query latencies & failures
 func report(latencies []float64, failures []error) error {
-	fmt.Printf("Total number of queries run:      %d\n", len(latencies)+len(failures))
+	fmt.Printf("\n    Total number of queries run:      %d\n", len(latencies)+len(failures))
 
-	fmt.Printf("Number of failures:               %d\n", len(failures))
+	fmt.Printf("    Number of failures:               %d\n", len(failures))
 
 	if len(latencies) == 0 {
 		return errors.New("all queries failed, no stats to calculate")
@@ -49,31 +50,31 @@ func report(latencies []float64, failures []error) error {
 	if err != nil {
 		return fmt.Errorf("failed to calculate total query time: %v", err)
 	}
-	fmt.Printf("Total time across all queries:    %f milliseconds\n", elapsed)
+	fmt.Printf("    Total time across all queries:    %f seconds\n", elapsed/1000)
 
 	avg, err := stats.Mean(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to calculate average query time: %v", err)
 	}
-	fmt.Printf("Average query time:               %f milliseconds\n", avg)
+	fmt.Printf("    Average query time:               %f ms\n", avg)
 
 	min, err := stats.Min(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to determine minimum query time: %v", err)
 	}
-	fmt.Printf("Minimum query time:               %f milliseconds\n", min)
+	fmt.Printf("    Minimum query time:               %f ms\n", min)
 
 	max, err := stats.Max(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to determine maximum query time: %v", err)
 	}
-	fmt.Printf("Maximum query time:               %f milliseconds\n", max)
+	fmt.Printf("    Maximum query time:               %f ms\n", max)
 
 	med, err := stats.Median(latencies)
 	if err != nil {
 		return fmt.Errorf("failed to median query time: %v", err)
 	}
-	fmt.Printf("Median query time:                %f milliseconds\n", med)
+	fmt.Printf("    Median query time:                %f ms\n\n", med)
 
 	return nil
 }

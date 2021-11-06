@@ -55,7 +55,7 @@ func (wp *WorkerPool) Close() {
 func (wp *WorkerPool) start() {
 	for qp := range wp.jobsQ {
 		// map the query parameter to the right worker
-		wid := qp.HostID() % wp.count
+		wid := qp.HostID % wp.count
 		wp.workers[wid].jobCh <- qp
 	}
 }
