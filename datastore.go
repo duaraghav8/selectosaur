@@ -31,7 +31,8 @@ type Datastore struct {
 // CPUStatsQueryExecTime returns the total processing time for the query
 // that computes cpu stats at 1-min intervals for the given query param.
 // Processing time here is the sum of Planning time & Execution time
-// returned by EXPLAIN ANALYZE for the query.
+// returned by EXPLAIN ANALYZE for the query
+// (see https://www.postgresql.org/docs/9.4/using-explain.html).
 func (d *Datastore) CPUStatsQueryExecTime(ctx context.Context, qp *QueryParameter) (float64, error) {
 	var res []explainResult
 	row := d.connPool.QueryRow(ctx, timeSlicedCpuStatsQuery, qp.Hostname, qp.StartTime, qp.EndTime)

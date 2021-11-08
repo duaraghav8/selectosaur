@@ -1,24 +1,31 @@
 # Selectosaur
 
+Selectosaur is a CLI tool. It runs SQL queries on Timescale DB based on user-supplied parameters and outputs stats for them.
 
-1. The query to run for each host
-select max(usage), min(usage) from cpu_usage where host = 'host_000008' and ts between '2017-01-01 08:59:22' and '2017-01-01 09:59:22';
-2. Worker pattern in Go
-3. DB connection (go driver? postgres or timescale db?)
-4. timescale intro docs + go connection docs (https://docs-dev.timescale.com/docs-add-visualizing-chunks-tutorial/timescaledb/add-visualizing-chunks-tutorial/quick-start/golang/#prerequisites)
-5. Readme doc + process to compile & run the app (single command)
-6. Some basic memory & CPU analysis using any profilers
-7. polish the public interface of the package
+## Build
+It is recommended that you build this app on a 64-bit Mac or Linux machine with Golang version `1.17`.
 
-db connection string
-`postgres://tsdbadmin:ha43nao4zo8ssg17@ixseujmyj1.rmdomcteja.tsdb.cloud.timescale.com:31703/tsdb?sslmode=require`
+1. Clone this repo on to your system
+2. Navigate to the root directory of this project and run `go build` to generate the binary. Alternatively, download a binary suitable for your platform from the [Releases](https://github.com/duaraghav8/selectosaur/releases) page.
+3. Ensure that the binary has execution permissions on your system. For Linux/MacOS, you can run `chmod +x ./selectosaur`.
+4. Test the binary by invoking `./selectosaur -h`. This should display the main help message of the CLI.
 
-`select max(usage), min(usage) from cpu_usage where host = 'host_000008' and ts between '2017-01-01 08:59:22' and '2017-01-01 09:59:22';`
+## Run
+1. Ensure that your query params CSV file `query_params.csv` is in the same directory as the CLI.
+2. Run the below commands:
 
-```
-select date_trunc('minute', ts) as clock, max(usage), min(usage) from cpu_usage where host = 'host_000008' and ts between '2017-01-01 08:59:22' and '2017-01-01 09:59:22' group by clock;
+```shell
+# NOTE: this is a temp timescale DB cluster which will be taken down soon. Enjoy for now.
+export DB_CONNECTION_STRING="postgres://tsdbadmin:ha43nao4zo8ssg17@ixseujmyj1.rmdomcteja.tsdb.cloud.timescale.com:31703/tsdb?sslmode=require"
 
-select time_bucket('1 minute', ts) as clock, max(usage), min(usage) from cpu_usage where host = 'host_000008' and ts between '2017-01-01 08:59:22' and '2017-01-01 09:10:22' group by clock;
+$ ./selectosaur --qp query_params.csv --worker-count 10
 
-select time_bucket('1 minute', ts) + '22 seconds' as clock, max(usage), min(usage) from cpu_usage where host = 'host_000008' and ts between '2017-01-01 08:59:22' and '2017-01-01 09:12:22' group by clock;
+    Total number of queries run:      200
+    Number of failures:               0
+    Total time across all queries:    329.820000 ms
+    Average query time:               1.649100 ms
+    Minimum query time:               1.349000 ms
+    Maximum query time:               2.998000 ms
+    Median query time:                1.462000 ms
+
 ```
