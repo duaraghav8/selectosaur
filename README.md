@@ -29,3 +29,5 @@ $ ./selectosaur --qp query_params.csv --worker-count 10
     Median query time:                1.462000 ms
 
 ```
+
+Result: They liked my assignment but I got turned down after subsequent interviews :/
