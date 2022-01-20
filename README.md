@@ -30,4 +30,5 @@ $ ./selectosaur --qp query_params.csv --worker-count 10
 
 ```
 
-Result: They liked my assignment but I got turned down after subsequent interviews :/
+## Result
+They liked my assignment but I got turned down after subsequent interviews :/
