@@ -2,6 +2,8 @@
 
 Selectosaur is a CLI tool. It runs SQL queries on Timescale DB based on user-supplied parameters and outputs stats for them.
 
+Wrote it as part of my job application at TimescaleDB.
+
 ## Build
 It is recommended that you build this app on a 64-bit Mac or Linux machine with Golang version `1.17`.
 
